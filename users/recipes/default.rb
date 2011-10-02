@@ -2,20 +2,44 @@ require_recipe 'ruby-shadow'
 
 groups = search(:groups)
 
+# first, create all active groups
+#
 groups.each do |group|
-  group group[:id] do
-    group_name group[:id]
-    gid group[:gid]
-    action [ :create, :modify, :manage ]
+  if node[:active_groups].include?(group[:id])
+    group group[:id] do
+      group_name group[:id]
+      gid group[:gid]
+      action [ :create, :modify, :manage ]
+    end
   end
+end
+
+
+# create all users beloging to active groups
+#
+groups.each do |group|
 
   if node[:active_groups].include?(group[:id])
+
     search(:users, "groups:#{group[:id]}").each do |user|
+
       home_dir = user[:home_dir] || "/home/#{user[:id]}"
       user user[:id] do
         comment user[:full_name]
         uid user[:uid]
-        gid user[:groups].first
+
+        primary_group = nil
+        user[:groups].each do |g|
+          group_name = g.to_s
+          if node[:active_groups].include?(group_name)
+            primary_group = g
+            break
+          end
+        end
+        if !primary_group.nil?
+          gid primary_group
+        end
+
         home home_dir
         shell user[:shell] || "/bin/bash"
         password user[:password]
@@ -26,10 +50,13 @@ groups.each do |group|
       user[:groups].each do |g|
         group g do
           group_name g.to_s
-          gid groups.find { |grp| grp[:id] == g }[:gid]
-          members [user[:id]]
-          append true
-          action [ :create, :modify, :manage ]
+          # only add user to group if it is an active group
+          if node[:active_groups].include?(group_name)
+            gid groups.find { |grp| grp[:id] == g }[:gid]
+            members [user[:id]]
+            append true
+            action [ :create, :modify, :manage ]
+          end
         end
       end
 
@@ -85,10 +112,14 @@ groups.each do |group|
 end
 
 # Remove initial setup user and group.
-user  "ubuntu" do
-  action :remove
-end
+#
+# Not really sure how this it to work because if we are user ubuntu (which is the case before we add new users)
+# then we are not allowed to remove ourselves.
+#
+#user  "ubuntu" do
+#  action :remove
+#end
 
-group "ubuntu" do
-  action :remove
-end
+#group "ubuntu" do
+#  action :remove
+#end
